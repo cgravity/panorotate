@@ -39,7 +39,7 @@ LatLong vec3_to_latlong(const Vec3& v)
     result.long_ = atan2(v.y, v.x);
     while(result.long_ < 0)
         result.long_ += 2*M_PI;
-        
+    
     result.lat = asin(v.z);
     
     return result;
@@ -73,9 +73,22 @@ int main()
     std::uniform_real_distribution<double> random_turn(0, 2*M_PI);
     std::uniform_real_distribution<double> random_vertical(-M_PI/2, M_PI/2);
 
-    for(size_t i = 0; i < 1024*1024*1024; i++)
+    FILE* fp = fopen("./tmp/list.txt", "rb");
+    
+    //for(size_t i = 0; i < 1024*1024*1024; i++)
+    while(!feof(fp))
     {
-        LatLong LL(random_vertical(rng), random_turn(rng));
+        double lat = 0, lon = 0;
+        if(fscanf(fp, "%lf %lf\n", &lat, &lon) != 2)
+        {
+            printf("WTF!\n");
+            exit(1);
+        }
+        
+        lon = fmod(lon, 2*M_PI);
+        
+        //LatLong LL(random_vertical(rng), random_turn(rng));
+        LatLong LL(lat, lon);
         Vec3 v = latlong_to_vec3(LL);
         LatLong LL2 = vec3_to_latlong(v);
         
