@@ -14,7 +14,7 @@ a.out : $(OBJECTS) Makefile
 build/%.o : src/%.cpp $(HEADERS) Makefile
 	@echo "Compiling: $<"
 	@mkdir -p ./build/
-	@g++ -fopenmp -Og -std=c++11 -o $@ -c $< -Iinclude $(INCLUDE_GLFW)
+	@g++ -fopenmp -O3 -std=c++11 -o $@ -c $< -Iinclude $(INCLUDE_GLFW)
 
 clean:
 	@rm -rf ./build/

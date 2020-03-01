@@ -120,6 +120,43 @@ LatLong vec3_to_latlong(const Vec3& v)
     return result;
 }
 
+// rotates Y towards Z (by spinning X axis)
+Mat3 rotX(double r)
+{
+    Mat3 m;
+    m[0] = 1.0;
+    m[4] = cos(r);
+    m[7] = sin(r);
+    m[5] = -sin(r);
+    m[8] = cos(r);
+    
+    return m;
+}
+
+// rotates X towards Z (by spinning Y axis)
+Mat3 rotY(double r)
+{
+    Mat3 m;
+    m[4] = 1.0;
+    m[0] = cos(r);
+    m[6] = sin(r);
+    m[2] = -sin(r);
+    m[8] = cos(r);
+    return m;
+}
+
+// rotates X towards Y (by spinning Z axis)
+Mat3 rotZ(double r)
+{
+    Mat3 m;
+    m[8] = 1.0;
+    m[0] = cos(r);
+    m[3] = sin(r);
+    m[1] = -sin(r);
+    m[4] = cos(r);
+    return m;
+}
+
 /*
 struct RGB8
 {
@@ -168,6 +205,8 @@ struct RGBAF
     double a;
     
     RGBAF() : r(0), g(0), b(0), a(0) {}
+    RGBAF(double R, double G, double B) : r(R), g(G), b(B), a(1) {}
+    RGBAF(double R, double G, double B, double A) : r(R), g(G), b(B), a(A) {}
 };
 
 RGBAF operator+(const RGBAF& c0, const RGBAF& c1)
@@ -471,16 +510,45 @@ void save(const Image<RGBAF>& from, const std::string& path)
     fclose(fp);
 }
 
-int main()
+int main(int argc, char** argv)
 {
-    Image<RGBAF> src, dst(5000, 2500);
-    if(!load(src, "data/constellations_2048.jpg"))
+    double rx = 0, ry = 0, rz = 0;
+    
+    if(argc >= 2)
     {
-        fprintf(stderr, "Failed to load constellations_2048.jpg\n");
+        if(sscanf(argv[1], "%lf", &rx))
+            rx = deg2rad(rx);
+    }
+    
+    if(argc >= 3)
+    {
+        if(sscanf(argv[2], "%lf", &ry))
+            ry = deg2rad(ry);
+    }
+    
+    if(argc >= 4)
+    {
+        if(sscanf(argv[3], "%lf", &rz))
+            rz = deg2rad(rz);
+    }
+
+    Image<RGBAF> src, dst(4096*2, 4096);
+    //if(!load(src, "data/constellations_2048.jpg"))
+    if(!load(src, "data/WI-Capitol-360x180-L.jpg"))
+    {
+        fprintf(stderr, "Failed to load input image\n");
         return EXIT_FAILURE;
     }
     
-    remap_full(dst, src);
+    remap_full(dst, src, rotZ(rz)*rotY(ry)*rotX(rx));
+    
+    /*
+    RGBAF p(0,1,0,1);
+    for(size_t y = 0; y < dst.height; y++)
+    {
+        dst.put(dst.width/2, y, p);
+    }
+    */
 
     save(dst, "tmp/preview.jpg");
     
