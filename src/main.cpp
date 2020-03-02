@@ -8,6 +8,7 @@
 using namespace std;
 
 #include "jpeglib.h"
+#include "tiffio.h"
 
 double deg2rad(double deg)
 {
@@ -395,6 +396,43 @@ void remap_full(Image<RGBAF>& onto, const Image<RGBAF>& from, Mat3 rot = ident()
     }
 }
 
+// FIXME: This assumes 8-bit RGB stored as scanlines in a single page.
+// TIFF allows for a hell of a lot of other possibilities, some of which
+// should definitely be handled (e.g. 16-bit, as well as RGBA).
+bool load_tif(Image<RGBAF>& into, const std::string& path)
+{
+    TIFF* tif = TIFFOpen(path.c_str(), "r");
+    
+    uint32 width;
+    uint32 height;
+    TIFFGetField(tif, TIFFTAG_IMAGEWIDTH, &width);
+    TIFFGetField(tif, TIFFTAG_IMAGELENGTH, &height);
+    
+    into.resize(width, height);
+    
+    unsigned char* buffer = (unsigned char*)malloc(width*3);
+    
+    for(uint32_t row = 0; row < height; row++)
+    {
+        TIFFReadScanline(tif, buffer, row);
+        for(uint32 col = 0; col < width; col++)
+        {
+            unsigned char* pixel = &buffer[3*col];
+            RGBAF color;
+            color.r = *(pixel + 0) / (double)0xFF;
+            color.g = *(pixel + 1) / (double)0xFF;
+            color.b = *(pixel + 2) / (double)0xFF;
+            color.a = 1.0;
+            
+            into.put(col, row, color);
+        }
+    }
+    
+    free(buffer);
+    TIFFClose(tif);
+    return true;
+}
+
 bool load(Image<RGBAF>& into, const std::string& path)
 {
     jpeg_decompress_struct cinfo;
@@ -534,7 +572,8 @@ int main(int argc, char** argv)
 
     Image<RGBAF> src, dst(4096*2, 4096);
     //if(!load(src, "data/constellations_2048.jpg"))
-    if(!load(src, "data/WI-Capitol-360x180-L.jpg"))
+    //if(!load(src, "data/WI-Capitol-360x180-L.jpg"))
+    if(!load_tif(src, "data/tmp/P1220980-Panorama-L.tif"))
     {
         fprintf(stderr, "Failed to load input image\n");
         return EXIT_FAILURE;

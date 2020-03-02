@@ -9,7 +9,7 @@ LINK_GLFW := $(shell pkg-config --cflags --libs --static glfw3) -lGL
 
 a.out : $(OBJECTS) Makefile
 	@echo "Linking $@"
-	@g++ -fopenmp -o $@ $(OBJECTS) $(LINK_GLFW) -ljpeg
+	@g++ -fopenmp -o $@ $(OBJECTS) $(LINK_GLFW) -ljpeg -ltiff
 
 build/%.o : src/%.cpp $(HEADERS) Makefile
 	@echo "Compiling: $<"
