@@ -226,6 +226,22 @@ RGBAF& operator+=(RGBAF& onto, const RGBAF& from)
     return onto;
 }
 
+RGBAF operator*(double s, const RGBAF& c)
+{
+    RGBAF out;
+    out.r = s * c.r;
+    out.g = s * c.g;
+    out.b = s * c.b;
+    out.a = s * c.a;
+    return out;
+}
+
+RGBAF& operator*=(RGBAF& onto, double s)
+{
+    onto = s * onto;
+    return onto;
+}
+
 /*
  *  AB  A = (0, 0); B = (1, 0)
  *  CD  C = (0, 1); D = (1, 1)
@@ -396,12 +412,89 @@ void remap_full(Image<RGBAF>& onto, const Image<RGBAF>& from, Mat3 rot = ident()
     }
 }
 
+void remap_full2(Image<RGBAF>& onto, const Image<RGBAF>& from, Mat3 rot = ident())
+{
+    // these should be odd to ensure we hit the center of AA range exactly
+    const int XSAMPS = 9;
+    const int YSAMPS = 9;
+    
+    double filter_table[XSAMPS*YSAMPS];
+    const double s = 0.4; // sigma for gaussian -- FIXME: validate if good value
+    
+    for(int y = 0; y < YSAMPS; y++)
+    for(int x = 0; x < XSAMPS; x++)
+    {
+        double X = x - (double)XSAMPS/2.0;
+        double Y = y - (double)YSAMPS/2.0;
+        
+        filter_table[XSAMPS*y+x] = exp(-(X*X + Y*Y)/(2*s));
+    }
+    
+    double sum = 0.0;
+    for(int i = 0; i < XSAMPS*YSAMPS; i++)
+    {
+        sum += filter_table[i];
+    }
+    
+    for(int i = 0; i < XSAMPS*YSAMPS; i++)
+    {
+        filter_table[i] /= sum;
+    }
+
+    #pragma omp parallel for
+    for(size_t y = 0; y < onto.height; y++)
+    for(size_t x = 0; x < onto.width; x++)
+    {
+        RGBAF out_pixel;
+        
+        for(int sub_y = 0; sub_y < YSAMPS; sub_y++)
+        for(int sub_x = 0; sub_x < XSAMPS; sub_x++)
+        {
+            double yf = (double)y + 1.0/(YSAMPS-1) * sub_y - 0.5;
+            double xf = (double)x + 1.0/(XSAMPS-1) * sub_x - 0.5;
+                
+            LatLong LL(
+                M_PI/2 - (double)yf / (onto.height-1) * M_PI,
+                (double)xf/(onto.width-1) * 2*M_PI);
+                
+            
+            Vec3 v = latlong_to_vec3(LL);
+            v = rot * v;
+            LatLong LL_src = vec3_to_latlong(v);
+            
+            double src_x = LL_src.long_ / (2*M_PI) * (from.width-1);
+            double src_y = (M_PI - (LL_src.lat+(M_PI/2)))/ M_PI * (from.height-1);
+            
+            if(src_x > from.width-1)
+                src_x = from.width - 1;
+            if(src_y > from.height-1)
+                src_y = from.height - 1;
+            if(src_x < 0)
+                src_x = 0;
+            if(src_y < 0)
+                src_y = 0;
+            
+            //out_pixel += bilinear_get(from, src_x, src_y);
+            
+            double scale = filter_table[sub_y*XSAMPS + sub_x];
+            out_pixel += scale * bilinear_get(from, src_x, src_y);
+        }
+        
+        //out_pixel *= 1.0 / (XSAMPS*YSAMPS);
+        
+        onto.put(x,y,out_pixel);
+    }
+}
+
 // FIXME: This assumes 8-bit RGB stored as scanlines in a single page.
 // TIFF allows for a hell of a lot of other possibilities, some of which
 // should definitely be handled (e.g. 16-bit, as well as RGBA).
 bool load_tif(Image<RGBAF>& into, const std::string& path)
 {
     TIFF* tif = TIFFOpen(path.c_str(), "r");
+    
+    if(!tif)
+        return false;
     
     uint32 width;
     uint32 height;
@@ -498,7 +591,7 @@ bool load(Image<RGBAF>& into, const std::string& path)
     return true;
 }
 
-void save(const Image<RGBAF>& from, const std::string& path)
+void save_jpeg(const Image<RGBAF>& from, const std::string& path)
 {
     jpeg_compress_struct cinfo;
     jpeg_error_mgr error;
@@ -548,6 +641,73 @@ void save(const Image<RGBAF>& from, const std::string& path)
     fclose(fp);
 }
 
+void save_tiff(const Image<RGBAF>& from, const std::string& path)
+{
+    unsigned char* row = (unsigned char*)malloc(from.width * 3);
+    memset(row, '\0', from.width*3);
+
+    TIFF* tif = TIFFOpen(path.c_str(), "w");
+    TIFFSetField(tif, TIFFTAG_IMAGEWIDTH, from.width);
+    TIFFSetField(tif, TIFFTAG_IMAGELENGTH, from.height);
+    TIFFSetField(tif, TIFFTAG_SAMPLESPERPIXEL, 3);
+    TIFFSetField(tif, TIFFTAG_BITSPERSAMPLE, 8);
+    TIFFSetField(tif, TIFFTAG_ORIENTATION, ORIENTATION_TOPLEFT);
+    TIFFSetField(tif, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
+    TIFFSetField(tif, TIFFTAG_PHOTOMETRIC, PHOTOMETRIC_RGB);
+    
+    for(size_t y = 0; y < from.height; y++)
+    {
+        for(size_t x = 0; x < from.width; x++)
+        {
+            row[3*x+0] = 0xFF * from.get(x,y).r;
+            row[3*x+1] = 0xFF * from.get(x,y).g;
+            row[3*x+2] = 0xFF * from.get(x,y).b;
+        }
+        
+        TIFFWriteScanline(tif, row, y, 0);
+    }
+    
+    TIFFClose(tif);
+}
+
+void save_blob(const Image<RGBAF>& src, const std::string& path)
+{
+    FILE* fp = fopen(path.c_str(), "wb");
+    
+    for(size_t y = 0; y < src.height; y++)
+    {
+        for(size_t x = 0; x < src.width; x++)
+        {
+            unsigned char r = 0xFF * src.get(x,y).r;
+            unsigned char g = 0xFF * src.get(x,y).g;
+            unsigned char b = 0xFF * src.get(x,y).b;
+            
+            fputc(r, fp);
+            fputc(g, fp);
+            fputc(b, fp);
+        }
+    }
+    
+    fclose(fp);
+}
+
+void make_test_image(Image<RGBAF>& into)
+{
+    into.clear(RGBAF(0,0,0,0));
+    
+    for(int y = 0; y < into.height; y++)
+    for(int x = 0; x < into.width; x++)
+    {
+        RGBAF pixel;
+        pixel.r = (float)x / into.width;
+        pixel.g = (float)y / into.height;
+        pixel.b = 
+          sqrt(x*x + y*y) / sqrt(into.width*into.width+into.height*into.height);
+        
+        into.put(x,y,pixel);  
+    }
+}
+
 int main(int argc, char** argv)
 {
     double rx = 0, ry = 0, rz = 0;
@@ -570,26 +730,60 @@ int main(int argc, char** argv)
             rz = deg2rad(rz);
     }
 
-    Image<RGBAF> src, dst(4096*2, 4096);
+ #if 0
+    //Image<RGBAF> src, dst(4096*2, 4096);
+    Image<RGBAF> src, dst;
     //if(!load(src, "data/constellations_2048.jpg"))
     //if(!load(src, "data/WI-Capitol-360x180-L.jpg"))
-    if(!load_tif(src, "data/tmp/P1220980-Panorama-L.tif"))
+
+    
+    dst.resize(src.width, src.height);
+    remap_full(dst, src, rotZ(rz)*rotY(ry)*rotX(rx));
+  #endif
+    
+    Image<RGBAF> src, dst;
+    
+    //if(!load_tif(src, "data/tmp/P1220980-Panorama-L.tif"))
+    if(!load_tif(src, "data/tmp/egypt-small.tif"))
     {
         fprintf(stderr, "Failed to load input image\n");
         return EXIT_FAILURE;
     }
+    //src.resize(1920,1920/2);
+    //make_test_image(src);
     
-    remap_full(dst, src, rotZ(rz)*rotY(ry)*rotX(rx));
+    save_tiff(src, "tmp/test.tif");
     
-    /*
-    RGBAF p(0,1,0,1);
+    dst.resize(src.width, src.height);
+    
+    remap_full(dst, src, rotX(deg2rad(90)));
+    save_tiff(dst, "tmp/test2.tif");
+    
+    remap_full2(dst, src, rotX(deg2rad(90)));
+    save_tiff(dst, "tmp/test3.tif");
+    
+    #if 0
     for(size_t y = 0; y < dst.height; y++)
+    for(size_t x = 0; x < dst.width; x++)
     {
-        dst.put(dst.width/2, y, p);
+        RGBAF a = src.get(x,y);
+        RGBAF b = dst.get(x,y);
+        RGBAF c(b.r - a.r, 
+                b.g - a.g, 
+                b.b - a.b, 
+                b.a - a.a);
+        
+        if(c.r != 0 || c.g != 0 || c.b != 0)
+        {
+            dst.put(x,y,b);
+        }
+        else
+            dst.put(x,y,RGBAF(0,0,0,0));
     }
-    */
-
-    save(dst, "tmp/preview.jpg");
+    
+    save_blob(src, "tmp/blob1");
+    save_blob(dst, "tmp/blob2");
+    #endif
     
     return 0;
 }
