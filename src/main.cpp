@@ -5,6 +5,8 @@
 #include <string>
 #include <cstring>
 #include <cstdlib>
+#include <iostream>
+#include <map>
 using namespace std;
 
 #include "jpeglib.h"
@@ -97,6 +99,59 @@ bool operator!=(const LatLong& a, const LatLong& b)
 {
     return !(a == b);
 }
+
+struct LL2Vec3_Table
+{
+    vector<double> sin_lat;
+    vector<double> sin_long;
+    vector<double> cos_lat;
+    vector<double> cos_long;
+    
+    int width;
+    int height;
+    int subpixels;
+    
+    LL2Vec3_Table(int w, int h, int s) 
+        : width(w), height(h), subpixels(s)
+    {
+        for(int x = 0; x < w; x++)
+        {
+            for(int sub_x = 0; sub_x < subpixels; sub_x++)
+            {
+                double xf = (double)x + 1.0/(subpixels-1) * sub_x - 0.5;
+                double long_ = (double)xf/(width-1.0) * 2*M_PI;
+                
+                sin_long.push_back(sin(long_));
+                cos_long.push_back(cos(long_));
+            }
+        }
+        
+        for(int y = 0; y < h; y++)
+        {
+            for(int sub_y = 0; sub_y < subpixels; sub_y++)
+            {
+                double yf  = (double)y + 1.0/(subpixels-1) * sub_y - 0.5;
+                double lat = M_PI/2 - (double)yf / (height-1.0) * M_PI;
+                
+                sin_lat.push_back(sin(lat));
+                cos_lat.push_back(cos(lat));
+            }
+        }
+    }
+    
+    Vec3 lookup(int x, int sub_x, int y, int sub_y)
+    {
+        int long_ = x * subpixels + sub_x;
+        int lat   = y * subpixels + sub_y;
+        
+        Vec3 result;
+        result.x = cos_long[long_] * cos_lat[lat];
+        result.y = sin_long[long_] * cos_lat[lat];
+        result.z = sin_lat[lat];
+        
+        return result;
+    }
+};
 
 Vec3 latlong_to_vec3(const LatLong& LL)
 {
@@ -209,6 +264,19 @@ struct RGBAF
     RGBAF(double R, double G, double B) : r(R), g(G), b(B), a(1) {}
     RGBAF(double R, double G, double B, double A) : r(R), g(G), b(B), a(A) {}
 };
+
+bool exact_match(const RGBAF& a, const RGBAF& b)
+{
+    if(a.r != b.r ||
+       a.g != b.g ||
+       a.b != b.b ||
+       a.a != b.a)
+    {
+        return false;
+    }
+    
+    return true;
+}
 
 RGBAF operator+(const RGBAF& c0, const RGBAF& c1)
 {
@@ -486,6 +554,70 @@ void remap_full2(Image<RGBAF>& onto, const Image<RGBAF>& from, Mat3 rot = ident(
     }
 }
 
+void remap_full3(Image<RGBAF>& onto, const Image<RGBAF>& from, Mat3 rot = ident())
+{
+    LL2Vec3_Table lookup_table(onto.width, onto.height, 9);
+    
+    // these should be odd to ensure we hit the center of AA range exactly
+    const int XSAMPS = 9;
+    const int YSAMPS = 9;
+    
+    double filter_table[XSAMPS*YSAMPS];
+    const double s = 0.4; // sigma for gaussian -- FIXME: validate if good value
+    
+    for(int y = 0; y < YSAMPS; y++)
+    for(int x = 0; x < XSAMPS; x++)
+    {
+        double X = x - (double)XSAMPS/2.0;
+        double Y = y - (double)YSAMPS/2.0;
+        
+        filter_table[XSAMPS*y+x] = exp(-(X*X + Y*Y)/(2*s));
+    }
+    
+    double sum = 0.0;
+    for(int i = 0; i < XSAMPS*YSAMPS; i++)
+    {
+        sum += filter_table[i];
+    }
+    
+    for(int i = 0; i < XSAMPS*YSAMPS; i++)
+    {
+        filter_table[i] /= sum;
+    }
+
+    #pragma omp parallel for
+    for(size_t y = 0; y < onto.height; y++)
+    for(size_t x = 0; x < onto.width; x++)
+    {
+        RGBAF out_pixel;
+        
+        for(int sub_y = 0; sub_y < YSAMPS; sub_y++)
+        for(int sub_x = 0; sub_x < XSAMPS; sub_x++)
+        {
+            Vec3 v = lookup_table.lookup(x, sub_x, y, sub_y);
+            v = rot * v;
+            LatLong LL_src = vec3_to_latlong(v);
+            
+            double src_x = LL_src.long_ / (2*M_PI) * (from.width-1);
+            double src_y = (M_PI - (LL_src.lat+(M_PI/2)))/ M_PI * (from.height-1);
+            
+            if(src_x > from.width-1)
+                src_x = from.width - 1;
+            if(src_y > from.height-1)
+                src_y = from.height - 1;
+            if(src_x < 0)
+                src_x = 0;
+            if(src_y < 0)
+                src_y = 0;
+            
+            double scale = filter_table[sub_y*XSAMPS + sub_x];
+            out_pixel += scale * bilinear_get(from, src_x, src_y);
+        }
+        
+        onto.put(x,y,out_pixel);
+    }
+}
+
 // FIXME: This assumes 8-bit RGB stored as scanlines in a single page.
 // TIFF allows for a hell of a lot of other possibilities, some of which
 // should definitely be handled (e.g. 16-bit, as well as RGBA).
@@ -731,17 +863,17 @@ int main(int argc, char** argv)
     }
 
  #if 0
-    //Image<RGBAF> src, dst(4096*2, 4096);
     Image<RGBAF> src, dst;
     //if(!load(src, "data/constellations_2048.jpg"))
     //if(!load(src, "data/WI-Capitol-360x180-L.jpg"))
 
     
     dst.resize(src.width, src.height);
-    remap_full(dst, src, rotZ(rz)*rotY(ry)*rotX(rx));
+    remap_full2(dst, src, rotZ(rz)*rotY(ry)*rotX(rx));
+    save_tiff(src, "out.tif");
   #endif
     
-    Image<RGBAF> src, dst;
+    Image<RGBAF> src, dst, dst2;
     
     //if(!load_tif(src, "data/tmp/P1220980-Panorama-L.tif"))
     if(!load_tif(src, "data/tmp/egypt-small.tif"))
@@ -749,45 +881,50 @@ int main(int argc, char** argv)
         fprintf(stderr, "Failed to load input image\n");
         return EXIT_FAILURE;
     }
-    //src.resize(1920,1920/2);
-    //make_test_image(src);
-    
-    save_tiff(src, "tmp/test.tif");
+    //save_tiff(src, "tmp/test.tif");
     
     dst.resize(src.width, src.height);
+    dst2.resize(src.width, src.height);
     
-    for(int i = 0; i < 360; i++)
-    {
-        char name[1024];
-        memset(name, 0, sizeof(name));
-        snprintf(name, sizeof(name), "data/animation/%d.jpg", i);
-        printf("Generating: %s\n", name);
-        remap_full2(dst, src, rotX(deg2rad(i)));
-        save_jpeg(dst, name);
-    }
+    double t1 = time(NULL);
+    printf("Remapping with old routine...\n");
+    remap_full2(dst, src, rotX(deg2rad(90)));
+    double t2 = time(NULL);
     
-    #if 0
-    for(size_t y = 0; y < dst.height; y++)
-    for(size_t x = 0; x < dst.width; x++)
+    printf("Remapping with new routine...\n");
+    remap_full3(dst2, src, rotX(deg2rad(90)));
+    double t3 = time(NULL);
+    
+    printf("Old time: %f\n", t2-t1);
+    printf("New time: %f\n", t3-t2);
+    
+    printf("Comparing results...\n");
+    bool ok = true;
+    
+    for(int y = 0; ok && y < dst.height; y++)
+    for(int x = 0; ok && x < dst.width; x++)
     {
-        RGBAF a = src.get(x,y);
-        RGBAF b = dst.get(x,y);
-        RGBAF c(b.r - a.r, 
-                b.g - a.g, 
-                b.b - a.b, 
-                b.a - a.a);
+        RGBAF a = dst.get(x,y);
+        RGBAF b = dst2.get(x,y);
         
-        if(c.r != 0 || c.g != 0 || c.b != 0)
+        if(!exact_match(a,b))
         {
-            dst.put(x,y,b);
+            printf(
+                "Failure at (%d, %d)\n\t"
+                    "(%lX %lX %lX %lX)\n\t"
+                    "(%lX %lX %lX %lX)\n",
+                x, y, 
+                *(uint64_t*)&a.r, *(uint64_t*)&a.g, *(uint64_t*)&a.b, *(uint64_t*)&a.a, 
+                *(uint64_t*)&b.r, *(uint64_t*)&b.g, *(uint64_t*)&b.b, *(uint64_t*)&b.a);
+            ok = false;
+            break;
         }
-        else
-            dst.put(x,y,RGBAF(0,0,0,0));
     }
     
-    save_blob(src, "tmp/blob1");
-    save_blob(dst, "tmp/blob2");
-    #endif
+    if(ok)
+        printf("Results match\n");
+    
+    //save_tiff(dst, "tmp/test2.tif");
     
     return 0;
 }
