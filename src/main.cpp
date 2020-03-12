@@ -756,11 +756,15 @@ int main(int argc, char** argv)
     
     dst.resize(src.width, src.height);
     
-    remap_full(dst, src, rotX(deg2rad(90)));
-    save_tiff(dst, "tmp/test2.tif");
-    
-    remap_full2(dst, src, rotX(deg2rad(90)));
-    save_tiff(dst, "tmp/test3.tif");
+    for(int i = 0; i < 360; i++)
+    {
+        char name[1024];
+        memset(name, 0, sizeof(name));
+        snprintf(name, sizeof(name), "data/animation/%d.jpg", i);
+        printf("Generating: %s\n", name);
+        remap_full2(dst, src, rotX(deg2rad(i)));
+        save_jpeg(dst, name);
+    }
     
     #if 0
     for(size_t y = 0; y < dst.height; y++)
