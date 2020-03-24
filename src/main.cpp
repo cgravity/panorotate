@@ -439,6 +439,123 @@ Mat3 ident()
     return m;
 }
 
+void remap_full(Image<RGBAF>& onto, const Image<RGBAF>& from, Mat3 rot = ident())
+{
+    #pragma omp parallel for
+    for(size_t y = 0; y < onto.height; y++)
+    for(size_t x = 0; x < onto.width; x++)
+    {
+        RGBAF out_pixel;
+    
+        for(int sub_y = 0; sub_y <= 5; sub_y++)
+        for(int sub_x = 0; sub_x <= 5; sub_x++)
+        {
+            double yf = (double)y + 1.0/5.0 * sub_y;
+            double xf = (double)x + 1.0/5.0 * sub_x;
+            
+            LatLong LL(
+                M_PI/2 - (double)yf / (onto.height-1) * M_PI,
+                (double)xf/(onto.width-1) * 2*M_PI);
+            
+            Vec3 v = latlong_to_vec3(LL);
+            v = rot * v;
+            LatLong LL_src = vec3_to_latlong(v);
+            
+            double src_x = LL_src.long_ / (2*M_PI) * (from.width-1);
+            double src_y = (M_PI - (LL_src.lat+(M_PI/2)))/ M_PI * (from.height-1);
+            
+            if(src_x > from.width-1)
+                src_x = from.width - 1;
+            if(src_y > from.height-1)
+                src_y = from.height - 1;
+            
+            out_pixel += bilinear_get(from, src_x, src_y);
+        }
+        
+        out_pixel.r /= 36.0;
+        out_pixel.g /= 36.0;
+        out_pixel.b /= 36.0;
+        out_pixel.a /= 36.0;
+            
+        onto.put(x,y,out_pixel);
+    }
+}
+
+void remap_full2(Image<RGBAF>& onto, const Image<RGBAF>& from, Mat3 rot = ident())
+{
+    // these should be odd to ensure we hit the center of AA range exactly
+    const int XSAMPS = 9;
+    const int YSAMPS = 9;
+    
+    double filter_table[XSAMPS*YSAMPS];
+    const double s = 0.4; // sigma for gaussian -- FIXME: validate if good value
+    
+    for(int y = 0; y < YSAMPS; y++)
+    for(int x = 0; x < XSAMPS; x++)
+    {
+        double X = x - (double)XSAMPS/2.0;
+        double Y = y - (double)YSAMPS/2.0;
+        
+        filter_table[XSAMPS*y+x] = exp(-(X*X + Y*Y)/(2*s));
+    }
+    
+    double sum = 0.0;
+    for(int i = 0; i < XSAMPS*YSAMPS; i++)
+    {
+        sum += filter_table[i];
+    }
+    
+    for(int i = 0; i < XSAMPS*YSAMPS; i++)
+    {
+        filter_table[i] /= sum;
+    }
+
+    #pragma omp parallel for
+    for(size_t y = 0; y < onto.height; y++)
+    for(size_t x = 0; x < onto.width; x++)
+    {
+        RGBAF out_pixel;
+        
+        for(int sub_y = 0; sub_y < YSAMPS; sub_y++)
+        for(int sub_x = 0; sub_x < XSAMPS; sub_x++)
+        {
+            double yf = (double)y + 1.0/(YSAMPS-1) * sub_y - 0.5;
+            double xf = (double)x + 1.0/(XSAMPS-1) * sub_x - 0.5;
+                
+            LatLong LL(
+                M_PI/2 - (double)yf / (onto.height-1) * M_PI,
+                (double)xf/(onto.width-1) * 2*M_PI);
+                
+            
+            Vec3 v = latlong_to_vec3(LL);
+            v = rot * v;
+            LatLong LL_src = vec3_to_latlong(v);
+            
+            double src_x = LL_src.long_ / (2*M_PI) * (from.width-1);
+            double src_y = (M_PI - (LL_src.lat+(M_PI/2)))/ M_PI * (from.height-1);
+            
+            if(src_x > from.width-1)
+                src_x = from.width - 1;
+            if(src_y > from.height-1)
+                src_y = from.height - 1;
+            if(src_x < 0)
+                src_x = 0;
+            if(src_y < 0)
+                src_y = 0;
+            
+            //out_pixel += bilinear_get(from, src_x, src_y);
+            
+            double scale = filter_table[sub_y*XSAMPS + sub_x];
+            out_pixel += scale * bilinear_get(from, src_x, src_y);
+        }
+        
+        //out_pixel *= 1.0 / (XSAMPS*YSAMPS);
+        
+        onto.put(x,y,out_pixel);
+    }
+}
+
+
 void remap_full3(Image<RGBAF>& onto, const Image<RGBAF>& from, Mat3 rot = ident(),
     const double s = 0.4)
 {
@@ -781,117 +898,124 @@ int main(int argc, char** argv)
         fprintf(stderr, "Failed to load input image\n");
         return EXIT_FAILURE;
     }
-    save_tiff(src, "tmp/test.tif");
+    //save_tiff(src, "tmp/test.tif");
     
     dst.resize(src.width, src.height);
     dst2.resize(src.width, src.height);
     
     printf("Rotating...\n");
-    remap_full3(dst, src, rotX(deg2rad(90)), 0.001);
+    //remap_full3(dst, src, rotX(deg2rad(90)), 0.001);
+    remap_full(dst, src, rotX(deg2rad(90)));
     
     printf("Rotating back...\n");
-    remap_full3(dst2, dst, rotX(deg2rad(-90)),  0.001);
-    save_tiff(dst2, "tmp/test2.tif");
+    //remap_full3(dst2, dst, rotX(deg2rad(-90)),  0.001);
+    remap_full(dst2, dst, rotX(deg2rad(-90)));
+    //save_tiff(dst2, "tmp/test2.tif");
     
-    printf("Rotating again...\n");
-    remap_full3(dst, dst2, rotX(deg2rad(90)),  0.001);
-    
-    printf("Rotating back again...\n");
-    remap_full3(dst2, dst, rotX(deg2rad(-90)),  0.001);
-    save_tiff(dst2, "tmp/test3.tif");
-    
+    printf("Converting to 8-bit...\n");
     Image<RGB8> out_src, out_dst;
     
-    printf("Converting...\n");
     convert_image(out_src, src);
     convert_image(out_dst, dst2);
     
+    printf("Computing stats...\n");
+
+    RGBAF sad(0,0,0,0);
+    RGBAF ssd(0,0,0,0);
     
-    printf("Finding maximum color changes\n");
-    int max_r = 0.0;
-    int max_g = 0.0;
-    int max_b = 0.0;
     
-    int max_rx = 0;
-    int max_ry = 0;
-    int max_gx = 0;
-    int max_gy = 0;
-    int max_bx = 0;
-    int max_by = 0;
+    RGBAF sad8(0,0,0,0);
+    RGBAF ssd8(0,0,0,0);
     
-    for(size_t y = 0; y < out_src.height; y++)
-    for(size_t x = 0; x < out_src.width; x++)
-    {
-        int r = abs(out_src.get(x,y).r - out_dst.get(x,y).r);
-        int g = abs(out_src.get(x,y).g - out_dst.get(x,y).g);
-        int b = abs(out_src.get(x,y).b - out_dst.get(x,y).b);
-        
-        if(r > max_r)
-        {
-            max_r = r;
-            max_rx = x;
-            max_ry = y;
-        }
-        
-        if(g > max_g)
-        {
-            max_g = g;   
-            max_gx = x;
-            max_gy = y;
-        }
-        
-        if(b > max_b)
-        {
-            max_b = b;
-            max_bx = x;
-            max_by = y;
-        }
-    }    
-    
-    printf("Max r: %d\n"
-           "Max g: %d\n"
-           "Max b: %d\n",
-           max_r, max_g, max_b);
-    
-    printf("Max rx: %d\n"
-           "Max ry: %d\n"
-           "Max gx: %d\n"
-           "Max gy: %d\n"
-           "Max bx: %d\n"
-           "Max by: %d\n",
-           max_rx, max_ry,
-           max_gx, max_gy,
-           max_bx, max_by);
-    
-    #if 0
-    printf("Comparing results...\n");
-    bool ok = true;
-    
-    for(int y = 0; ok && y < dst.height; y++)
-    for(int x = 0; ok && x < dst.width; x++)
+    for(int y = 0; y < src.height; y++)
+    for(int x = 0; x < src.width; x++)
     {
         RGBAF a = src.get(x,y);
         RGBAF b = dst2.get(x,y);
         
-        if(!exact_match(a,b))
-        {
-            printf(
-                "Failure at (%d, %d)\n\t"
-                    "(%lX %lX %lX %lX)\n\t"
-                    "(%lX %lX %lX %lX)\n",
-                x, y, 
-                *(uint64_t*)&a.r, *(uint64_t*)&a.g, *(uint64_t*)&a.b, *(uint64_t*)&a.a, 
-                *(uint64_t*)&b.r, *(uint64_t*)&b.g, *(uint64_t*)&b.b, *(uint64_t*)&b.a);
-            ok = false;
-            break;
-        }
+        
+        RGB8 a8 = out_src.get(x,y);
+        RGB8 b8 = out_dst.get(x,y);
+        
+        double R = a.r - b.r;
+        double G = a.g - b.g;
+        double B = a.b - b.b;
+        
+        double R8 = a8.r - b8.r;
+        double G8 = a8.g - b8.g;
+        double B8 = a8.b - b8.b;
+        
+        sad.r += fabs(R);
+        sad.g += fabs(G);
+        sad.b += fabs(B);
+        
+        sad8.r += fabs(R8);
+        sad8.g += fabs(G8);
+        sad8.b += fabs(B8);
+                
+        ssd.r += R*R;
+        ssd.g += G*G;
+        ssd.b += B*B;
+        
+        ssd8.r += R8*R8;
+        ssd8.g += G8*G8;
+        ssd8.b += B8*B8;
     }
     
-    if(ok)
-        printf("Results match\n");
-    #endif
+    RGBAF mad = sad;
+    mad.r /= src.width; mad.r /= src.height;
+    mad.g /= src.width; mad.g /= src.height;
+    mad.b /= src.width; mad.b /= src.height;
     
-    //save_tiff(dst2, "tmp/test2.tif");
+    RGBAF mad8 = sad8;
+    mad8.r /= src.width; mad8.r /= src.height;
+    mad8.g /= src.width; mad8.g /= src.height;
+    mad8.b /= src.width; mad8.b /= src.height;
+    
+    
+    printf("Sum of absolute differences (float):\n"
+           "Red:\t%f\n"
+           "Green:\t%f\n"
+           "Blue:\t%f\n",
+           sad.r, sad.g, sad.b);
+    printf("\n");
+    
+    printf("Mean absolute differences (float):\n"
+           "Red:\t%f\n"
+           "Green:\t%f\n"
+           "Blue:\t%f\n",
+           mad.r, mad.g, mad.b);
+    printf("\n");
+    
+    printf("Sum of squared differences (float):\n"
+           "Red:\t%f\n"
+           "Green:\t%f\n"
+           "Blue:\t%f\n",
+           ssd.r, ssd.g, ssd.b);
+    
+    printf("\n");
+    printf("\n");    
+    
+    printf("Sum of absolute differences (RGB8):\n"
+           "Red:\t%f\n"
+           "Green:\t%f\n"
+           "Blue:\t%f\n",
+           sad8.r, sad8.g, sad8.b);
+    printf("\n");
+    
+    printf("Mean absolute differences (RGB8):\n"
+           "Red:\t%f\n"
+           "Green:\t%f\n"
+           "Blue:\t%f\n",
+           mad8.r, mad8.g, mad8.b);
+    printf("\n");
+    
+    printf("Sum of squared differences (RGB8):\n"
+           "Red:\t%f\n"
+           "Green:\t%f\n"
+           "Blue:\t%f\n",
+           ssd8.r, ssd8.g, ssd8.b);
+    
     
     return 0;
 }
