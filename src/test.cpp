@@ -5,6 +5,7 @@ using namespace std;
 #include "math.h"
 #include "image.h"
 #include "remap.h"
+#include "test.h"
 
 // rotate 90 degrees, rotate back, calculate and print stats
 void double_rotate_test(const Image<RGBAF>& src)
