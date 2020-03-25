@@ -1,63 +1,141 @@
-#include <cmath>
-#include <cstdio>
-#include <vector>
-#include <cstdint>
-#include <string>
-#include <cstring>
-#include <cstdlib>
-#include <iostream>
-#include <map>
-using namespace std;
-
 #include "math.h"
 #include "image.h"
+#include "remap.h"
+
+#include <cstdio>
+#include <cstdlib>
+#include <vector>
+#include <string>
+using namespace std;
+
+const char* USAGE =
+
+"panorotate\n"
+"\n"
+"FIXME: Usage message\n"
+;
+
 
 void double_rotate_test(const Image<RGBAF>& src);
 
+
+// panorotate -i file -o file x y z
+// panorotate -i file -test
+
 int main(int argc, char** argv)
 {
-    double rx = 0, ry = 0, rz = 0;
-    
-    if(argc >= 2)
-    {
-        if(sscanf(argv[1], "%lf", &rx))
-            rx = deg2rad(rx);
-    }
-    
-    if(argc >= 3)
-    {
-        if(sscanf(argv[2], "%lf", &ry))
-            ry = deg2rad(ry);
-    }
-    
-    if(argc >= 4)
-    {
-        if(sscanf(argv[3], "%lf", &rz))
-            rz = deg2rad(rz);
-    }
+    string input_filename;
+    string output_filename;
+    bool run_test = false;  // true if double rotate test is requested
 
- #if 0
+    double rargs[3];        // rotation arguments as array
+    int ri = 0;             // current parse position for rotation args
+    
+    // just to make it clear which is which:
+    double& rx = rargs[0];
+    double& ry = rargs[1];
+    double& rz = rargs[2];
+    
+    
+    if(argc <= 1)
+    {
+        puts(USAGE);
+        return 0;
+    }
+    
+    for(int i = 1; i < argc; i++)
+    {
+        string arg = argv[i];
+                
+        if(arg == "-h" || arg == "--help")
+        {
+            puts(USAGE);
+            return 0;
+        }
+        
+        if(arg == "--test")
+        {
+            run_test = true;
+            continue;
+        }
+        
+        if(arg == "-i")
+        {
+            i++;
+            
+            if(i >= argc)
+            {
+                fprintf(stderr, "Expected input filename in arguments\n");
+                return EXIT_FAILURE;
+            }
+            
+            input_filename = argv[i];
+            continue;
+        }
+        
+        if(arg == "-o")
+        {
+            i++;
+            
+            if(i >= argc)
+            {
+                fprintf(stderr, "Expected output filename in arguments\n");
+                return EXIT_FAILURE;
+            }
+            
+            output_filename = argv[i];
+            continue;
+        }
+        
+        if(ri >= 3)
+        {
+            fprintf(stderr, "Only three rotation arguments are allowed\n");
+            return EXIT_FAILURE;
+        }
+        
+        if(sscanf(argv[i], "%lf", &rargs[ri]))
+        {
+            rargs[ri] = deg2rad(rargs[ri]);
+            ri++;
+        }
+    }
+    
     Image<RGBAF> src, dst;
-    //if(!load(src, "data/constellations_2048.jpg"))
-    //if(!load(src, "data/WI-Capitol-360x180-L.jpg"))
-
     
-    dst.resize(src.width, src.height);
-    remap_full2(dst, src, rotZ(rz)*rotY(ry)*rotX(rx));
-    save_tiff(src, "out.tif");
-  #endif
-    
-    Image<RGBAF> src;
-    
-    //if(!load_tif(src, "data/tmp/P1220980-Panorama-L.tif"))
-    if(!load_tif(src, "data/tmp/egypt-small.tif"))
+    if(input_filename.size() == 0)
     {
-        fprintf(stderr, "Failed to load input image\n");
+        fprintf(stderr, "[ERROR] Cannot proceed without input file\n");
         return EXIT_FAILURE;
     }
     
-    double_rotate_test(src);
+    if(!run_test && output_filename.size() == 0)
+    {
+        fprintf(stderr, "[ERROR] No output filename specified\n");
+        return EXIT_FAILURE;
+    }
     
+    if(!load(src, input_filename))
+    {
+        fprintf(stderr, "[ERROR] Couldn't load input file -- stopping.\n");
+        return EXIT_FAILURE;
+    }
+    
+    if(run_test)
+    {
+        double_rotate_test(src);
+        return 0;
+    }
+    
+    dst.resize(src.width, src.height);
+    
+    printf("Input:    %s\n", input_filename.c_str());
+    printf("Output:   %s\n", output_filename.c_str());
+    printf("Size:     %lu %lu\n", src.width, src.height);
+    printf("Rotation: %f %f %f\n", rad2deg(rx), rad2deg(ry), rad2deg(rz));
+
+    
+    remap_full3(dst, src, rotZ(rz)*rotY(ry)*rotX(rx));
+    save_tiff(dst, output_filename);
     
     return 0;
 }

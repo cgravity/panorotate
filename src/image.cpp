@@ -113,7 +113,7 @@ RGBAF bilinear_get(const Image<RGBAF>& src, double x, double y)
 // FIXME: This assumes 8-bit RGB stored as scanlines in a single page.
 // TIFF allows for a hell of a lot of other possibilities, some of which
 // should definitely be handled (e.g. 16-bit, as well as RGBA).
-bool load_tif(Image<RGBAF>& into, const std::string& path)
+bool load_tiff(Image<RGBAF>& into, const std::string& path)
 {
     TIFF* tif = TIFFOpen(path.c_str(), "r");
     
@@ -125,21 +125,80 @@ bool load_tif(Image<RGBAF>& into, const std::string& path)
     TIFFGetField(tif, TIFFTAG_IMAGEWIDTH, &width);
     TIFFGetField(tif, TIFFTAG_IMAGELENGTH, &height);
     
+    uint32 bps = 0;
+    TIFFGetField(tif, TIFFTAG_BITSPERSAMPLE, &bps);
+    uint32 spp = 0;
+    TIFFGetField(tif, TIFFTAG_SAMPLESPERPIXEL, &spp);
+    
+    double scale;
+    
+    if(bps == 8)
+    {
+        scale = 0xFF;
+    }
+    else if(bps == 16)
+    {
+        scale = 0xFFFF;
+    }
+    else
+    {
+        fprintf(stderr, "[ERROR] TIFF with unsupported bits per sample: %u\n",
+            bps);
+            
+        return false;
+    }
+    
+    if(spp != 3 && spp != 4)
+    {
+        fprintf(stderr, "[ERROR] TIFF with unsupported samples per pixel: %u\n",
+            spp);
+    }
+    
     into.resize(width, height);
     
-    unsigned char* buffer = (unsigned char*)malloc(width*3);
+    unsigned char* buffer = (unsigned char*)malloc(width*spp);
     
     for(uint32_t row = 0; row < height; row++)
     {
         TIFFReadScanline(tif, buffer, row);
         for(uint32 col = 0; col < width; col++)
         {
-            unsigned char* pixel = &buffer[3*col];
             RGBAF color;
-            color.r = *(pixel + 0) / (double)0xFF;
-            color.g = *(pixel + 1) / (double)0xFF;
-            color.b = *(pixel + 2) / (double)0xFF;
-            color.a = 1.0;
+            
+            if(bps == 8)
+            {
+                unsigned char* pixel = &buffer[spp*col];
+
+                color.r = *(pixel + 0) / scale;
+                color.g = *(pixel + 1) / scale;
+                color.b = *(pixel + 2) / scale;
+                
+                if(spp == 4)
+                {
+                    color.a = *(pixel + 3) / scale;
+                }
+                else
+                {
+                    color.a = 1.0;
+                }
+            }
+            else
+            {
+                uint16_t* pixel = &((uint16_t*)buffer)[spp*col];
+
+                color.r = *(pixel + 0) / scale;
+                color.g = *(pixel + 1) / scale;
+                color.b = *(pixel + 2) / scale;
+                
+                if(spp == 4)
+                {
+                    color.a = *(pixel + 3) / scale;
+                }
+                else
+                {
+                    color.a = 1.0;
+                }
+            }
             
             into.put(col, row, color);
         }
@@ -164,7 +223,7 @@ bool load_jpeg(Image<RGBAF>& into, const std::string& path)
     FILE* fp = fopen(path.c_str(), "rb");
     if(!fp)
     {
-        fprintf(stderr, "Failed to open: %s\n", path.c_str());
+        fprintf(stderr, "[ERROR] Failed to open: %s\n", path.c_str());
         jpeg_destroy_decompress(&cinfo);
         return false;
     }
@@ -173,7 +232,7 @@ bool load_jpeg(Image<RGBAF>& into, const std::string& path)
     
     if(jpeg_read_header(&cinfo, TRUE) != JPEG_HEADER_OK)
     {
-        fprintf(stderr, "Failed to read JPG header: %s\n", path.c_str());
+        fprintf(stderr, "[ERROR] Failed to read JPG header: %s\n",path.c_str());
         jpeg_destroy_decompress(&cinfo);
         fclose(fp);
         return false;
@@ -309,4 +368,50 @@ void convert_image(Image<RGB8>& dst, const Image<RGBAF>& src)
     }
 }
 
+bool load(Image<RGBAF>& into, const std::string& path)
+{
+    char buffer[16];
+    memset(buffer, '\0', sizeof(buffer));
+    
+    FILE* fp = fopen(path.c_str(), "rb");
+    
+    if(!fp)
+    {
+        fprintf(stderr, "[ERROR] Failed to open file: %s\n", path.c_str());
+        return false;
+    }
+    
+    size_t read_size = fread(buffer, 1, 16, fp);
+    fclose(fp);
+    
+    if(read_size != 16)
+    {
+        fprintf(stderr, "[ERROR] Failed to read from file: %s\n", path.c_str());
+        return false;
+    }
+    
+    // PNG
+    if(memcmp(buffer, "\x89\x50\x4E\x47\x0D\x0A\x1A\x0A", 8) == 0)
+    {
+        fprintf(stderr, "[ERROR] PNG input type is not supported yet\n");
+        return false;
+    }
+    
+    // JPG
+    if(memcmp(buffer, "\xFF\xD8\xFF\xE0", 4) == 0 ||
+       memcmp(buffer, "\xFF\xD8\xFF\xE1", 4) == 0)
+    {
+        return load_jpeg(into, path);
+    }
+    
+    // TIFF
+    if( memcmp(buffer, "\x49\x49\x2A\x00", 4) == 0 || 
+        memcmp(buffer, "\x4D\x4D\x00\x2A", 4) == 0)
+    {
+        return load_tiff(into, path);
+    }
+    
+    fprintf(stderr, "[ERROR] Did not recognize input file format.\n");
+    return false;
+}
 

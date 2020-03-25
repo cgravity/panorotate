@@ -137,7 +137,8 @@ struct Image
 
 RGBAF bilinear_get(const Image<RGBAF>& src, double x, double y);
 
-bool load_tif(Image<RGBAF>& into, const std::string& path);
+bool load(Image<RGBAF>& into, const std::string& path);
+bool load_tiff(Image<RGBAF>& into, const std::string& path);
 bool load_jpeg(Image<RGBAF>& into, const std::string& path);
 
 void save_jpeg(const Image<RGBAF>& from, const std::string& path);
