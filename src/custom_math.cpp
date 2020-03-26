@@ -1,4 +1,4 @@
-#include "math.h"
+#include "custom_math.h"
 #include <cmath>
 using namespace std;
 

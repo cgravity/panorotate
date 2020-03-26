@@ -2,7 +2,7 @@
 #include <cmath>
 using namespace std;
 
-#include "math.h"
+#include "custom_math.h"
 #include "image.h"
 #include "remap.h"
 #include "test.h"

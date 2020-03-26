@@ -1,5 +1,5 @@
 #include "image.h"
-#include "math.h"
+#include "custom_math.h"
 
 // current best quality method
 void remap_full3(
