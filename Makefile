@@ -7,7 +7,7 @@ LINK := -ljpeg -ltiff
 
 .PHONY: clean
 
-a.out : $(OBJECTS) Makefile
+panorotate : $(OBJECTS) Makefile
 	@echo "Linking $@"
 	@g++ -fopenmp -o $@ $(OBJECTS) $(LINK)
 
@@ -18,5 +18,5 @@ build/%.o : src/%.cpp $(HEADERS) Makefile
 
 clean:
 	@rm -rf ./build/
-	@rm -f ./a.out
+	@rm -f ./panorotate
 
