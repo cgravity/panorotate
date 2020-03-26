@@ -38,8 +38,8 @@ void double_rotate_test(const Image<RGBAF>& src)
     RGBAF sad8(0,0,0,0);
     RGBAF ssd8(0,0,0,0);
     
-    for(int y = 0; y < src.height; y++)
-    for(int x = 0; x < src.width; x++)
+    for(size_t y = 0; y < src.height; y++)
+    for(size_t x = 0; x < src.width; x++)
     {
         RGBAF a = src.get(x,y);
         RGBAF b = dst2.get(x,y);

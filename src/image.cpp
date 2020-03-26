@@ -444,8 +444,8 @@ void convert_image(Image<RGB8>& dst, const Image<RGBAF>& src)
 {
     dst.resize(src.width, src.height);
     
-    for(int y = 0; y < src.height; y++)
-    for(int x = 0; x < src.width; x++)
+    for(size_t y = 0; y < src.height; y++)
+    for(size_t x = 0; x < src.width; x++)
     {
         RGB8 pixel;
         pixel.r = 0xFF * src.get(x,y).r;

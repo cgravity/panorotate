@@ -121,17 +121,27 @@ struct Image
     
     T get_clamp(int x, int y) const
     {
+        size_t sx, sy;
+        
         if(x < 0)
-            x = 0;
-        else if(x >= width)
-            x = width-1;
+            sx = 0;
+        else
+            sx = x;
+        
+        if(sx >= width)
+            sx = width-1;
+        
 
         if(y < 0)
-            y = 0;
-        else if(y >= height)
-            y = height-1;
+            sy = 0;
+        else
+            sy = y;
+            
+        if(sy >= height)
+            sy = height-1;
+
         
-        return get(x, y);        
+        return get(sx, sy);        
     } 
 };
 

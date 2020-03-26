@@ -116,7 +116,7 @@ void print_save_formats()
     // calculate max flag_name length to make formating nicer
     size_t max_length = 0;
 
-    for(int i = 0; 
+    for(size_t i = 0; 
         i < sizeof(save_format_table)/sizeof(save_format_table[0]);
         i++)
     {
@@ -127,7 +127,7 @@ void print_save_formats()
     }
     
     // actually print the table
-    for(int i = 0; 
+    for(size_t i = 0; 
         i < sizeof(save_format_table)/sizeof(save_format_table[0]);
         i++)
     {
@@ -152,7 +152,7 @@ void print_usage()
 
 SaveFormat* find_save_format(const std::string& name)
 {
-    for(int i = 0; 
+    for(size_t i = 0; 
         i < sizeof(save_format_table)/sizeof(save_format_table[0]);
         i++)
     {
