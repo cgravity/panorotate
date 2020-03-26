@@ -106,11 +106,6 @@ RGBAF bilinear_get(const Image<RGBAF>& src, double x, double y)
     return bilinear(x_frac, y_frac, values);
 }
 
-
-
-// FIXME: This assumes 8-bit RGB stored as scanlines in a single page.
-// TIFF allows for a hell of a lot of other possibilities, some of which
-// should definitely be handled (e.g. 16-bit, as well as RGBA).
 ImageLoadResult load_tiff(Image<RGBAF>& into, const std::string& path)
 {
     ImageLoadResult result;
@@ -166,7 +161,7 @@ ImageLoadResult load_tiff(Image<RGBAF>& into, const std::string& path)
     
     into.resize(width, height);
     
-    unsigned char* buffer = (unsigned char*)malloc(width*spp*bytes);
+    void* buffer = malloc(width*spp*bytes);
     
     for(uint32_t row = 0; row < height; row++)
     {
@@ -177,7 +172,7 @@ ImageLoadResult load_tiff(Image<RGBAF>& into, const std::string& path)
             
             if(bps == 8)
             {
-                unsigned char* pixel = &buffer[spp*col];
+                unsigned char* pixel = &((unsigned char*)buffer)[spp*col];
 
                 color.r = *(pixel + 0) / scale;
                 color.g = *(pixel + 1) / scale;
@@ -346,6 +341,7 @@ void save_tiff(const Image<RGBAF>& from, const std::string& path,
 {
     unsigned char* row_bytes = NULL;
     uint16_t* row_shorts = NULL;
+    void* row = NULL;
 
     if(params.spp !=3 && params.spp != 4)
     {
@@ -359,11 +355,15 @@ void save_tiff(const Image<RGBAF>& from, const std::string& path,
     {
         row_bytes = (unsigned char*)malloc(from.width * params.spp);
         memset(row_bytes, '\0', from.width * params.spp);
+        
+        row = row_bytes;
     }
     else if(params.bps == 16)
     {
         row_shorts = (uint16_t*)malloc(from.width * params.spp * 2);
         memset(row_shorts, '\0', from.width * params.spp * 2);
+        
+        row = row_shorts;
     }
     else
     {
@@ -388,19 +388,18 @@ void save_tiff(const Image<RGBAF>& from, const std::string& path,
     TIFFSetField(tif, TIFFTAG_ORIENTATION, ORIENTATION_TOPLEFT);
     TIFFSetField(tif, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);    
     TIFFSetField(tif, TIFFTAG_PHOTOMETRIC, PHOTOMETRIC_RGB);
+    TIFFSetField(tif, TIFFTAG_ROWSPERSTRIP, TIFFDefaultStripSize(tif,0));
     
     if(params.spp == 4)
     {
         uint16 extra_list[1] = {EXTRASAMPLE_ASSOCALPHA};
         TIFFSetField(tif, TIFFTAG_EXTRASAMPLES, 1, &extra_list);
     }
-        
     
     for(size_t y = 0; y < from.height; y++)
     {
         for(size_t x = 0; x < from.width; x++)
         {
-        
             if(params.bps == 8)
             {
                 row_bytes[params.spp*x+0] = 0xFF * from.get(x,y).r;
@@ -411,9 +410,6 @@ void save_tiff(const Image<RGBAF>& from, const std::string& path,
                 {
                     row_bytes[params.spp*x+3] = 0xFF * from.get(x,y).a;
                 }
-                
-                
-                TIFFWriteScanline(tif, row_bytes, y, 0);
             }
             else if(params.bps == 16)
             {
@@ -425,8 +421,6 @@ void save_tiff(const Image<RGBAF>& from, const std::string& path,
                 {
                     row_shorts[params.spp*x+3] = 0xFFFF * from.get(x,y).a;
                 }
-                        
-                TIFFWriteScanline(tif, row_shorts, y, 0);
             }
             else
             {
@@ -435,7 +429,14 @@ void save_tiff(const Image<RGBAF>& from, const std::string& path,
                 return;
             }
         }
+        
+        TIFFWriteScanline(tif, row, y, 0);
     }
+    
+    free(row);
+    row = NULL;
+    row_bytes = NULL;
+    row_shorts = NULL;
     
     TIFFClose(tif);
 }
