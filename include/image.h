@@ -137,12 +137,41 @@ struct Image
 
 RGBAF bilinear_get(const Image<RGBAF>& src, double x, double y);
 
-bool load(Image<RGBAF>& into, const std::string& path);
-bool load_tiff(Image<RGBAF>& into, const std::string& path);
-bool load_jpeg(Image<RGBAF>& into, const std::string& path);
+struct ImageLoadResult
+{
+    bool ok;
+    
+    uint32_t bps;
+    uint32_t spp;
+    
+    ImageLoadResult() : ok(false), bps(8), spp(3) {}
+};
 
-void save_jpeg(const Image<RGBAF>& from, const std::string& path);
-void save_tiff(const Image<RGBAF>& from, const std::string& path);
+ImageLoadResult load(Image<RGBAF>& into, const std::string& path);
+ImageLoadResult load_tiff(Image<RGBAF>& into, const std::string& path);
+ImageLoadResult load_jpeg(Image<RGBAF>& into, const std::string& path);
+
+
+struct ImageSaveParams
+{
+    // save_tiff needs this info:
+    uint32_t bps;
+    uint32_t spp;
+    
+    // save_jpeg needs this info:
+    int quality;
+    
+    ImageSaveParams() : bps(8), spp(3), quality(90) {}
+};
+
+void save_jpeg(const Image<RGBAF>& from, const std::string& path,
+    ImageSaveParams params);
+    
+void save_tiff(const Image<RGBAF>& from, const std::string& path, 
+    ImageSaveParams params);
+
 
 void convert_image(Image<RGB8>& dst, const Image<RGBAF>& src);
+
+
 

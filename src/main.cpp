@@ -13,14 +13,16 @@ using namespace std;
 const char* USAGE =
 
 "Usage: panorotate -i <filename> [-o <filename>] [-f <format>]\n"
-"                  [--test] [<x>] [<y>] [<z>]\n"
+"                  [-q <jpg_quality>] [--test] [<x>] [<y>] [<z>]\n"
 "\n"
 "Flags and arguments:\n"
 "    -i filename    specify input filename (required)\n"
 "    -o filename    specify output filename (required except for --test)\n"
 "    -f format      specify output format (default is 'TIFF')\n"
 "                   See the table below for full list of possible formats.\n"
-"    --test         Run the double rotation quality test.\n"
+"    -q jpg_quality Integer quality percent to use when saving as JPEG.\n"
+"                   (default is 90)\n"
+"    --test         Run the double rotation test and print statistics.\n"
 "    <x y z>        Rotation angles in degrees (unset values default to 0)\n"
 "\n"
 "Example usage:\n"
@@ -33,7 +35,10 @@ const char* USAGE =
 
 struct SaveFormat
 {
-    typedef void (*SaveFunc)(const Image<RGBAF>&, const std::string&);
+    typedef void (*SaveFunc)(
+        const Image<RGBAF>&, 
+        const std::string&,
+        ImageSaveParams);
     
     string flag_name;
     SaveFunc save;
@@ -62,18 +67,46 @@ struct SaveFormat
     }
 };
 
+void save_tiff_rgb8(
+    const Image<RGBAF>& img, const std::string& path, ImageSaveParams params)
+{
+    params.spp = 3;
+    params.bps = 8;
+    save_tiff(img, path, params);
+}
+
+void save_tiff_rgba8(
+    const Image<RGBAF>& img, const std::string& path, ImageSaveParams params)
+{
+    params.spp = 4;
+    params.bps = 8;
+    save_tiff(img, path, params);
+}
+
+void save_tiff_rgb16(
+    const Image<RGBAF>& img, const std::string& path, ImageSaveParams params)
+{
+    params.spp = 3;
+    params.bps = 16;
+    save_tiff(img, path, params);
+}
+
+void save_tiff_rgba16(
+    const Image<RGBAF>& img, const std::string& path, ImageSaveParams params)
+{
+    params.spp = 4;
+    params.bps = 16;
+    save_tiff(img, path, params);
+}
+
 SaveFormat save_format_table[] = {
-    SaveFormat("TIFF", save_tiff,  "(default) -- same bpp/spp if input was TIFF, else RGB8"),
-    SaveFormat("JPG", save_jpeg,   "8-bit RGB JPEG (90 percent quality)"),
-    SaveFormat("JPEG", save_jpeg,  "(synonym; same as above)") //,
-    /*
-    SaveFormat{"TIFF_RGB8", save_tiff_rgb8, "8-bit RGB TIFF"),
-    SaveFormat{"TIFF_RGB16", save_tiff_rgb16, "16-bit RGB TIFF"),
-    SaveFormat{"TIFF_RGBA8", save_tiff_rgba8, "8-bit RGBA TIFF"),
-    SaveFormat{"TIFF_RGBA16", save_tiff_rgba16, "16-bit RGBA TIFF")
-    */
-    
-     ,   SaveFormat("TIFF_RGBA16", save_tiff, "FIXME")
+    SaveFormat("TIFF", save_tiff,  "(default) -- matches bps/spp from input"),
+    SaveFormat("JPG", save_jpeg,   "8-bit RGB JPEG (default q=90)"),
+    SaveFormat("JPEG", save_jpeg,  "(synonym; same as above)"),
+    SaveFormat("TIFF_RGB8", save_tiff_rgb8,     "8-bit  RGB  TIFF"),
+    SaveFormat("TIFF_RGB16", save_tiff_rgb16,   "16-bit RGB  TIFF"),
+    SaveFormat("TIFF_RGBA8", save_tiff_rgba8,   "8-bit  RGBA TIFF"),
+    SaveFormat("TIFF_RGBA16", save_tiff_rgba16, "16-bit RGBA TIFF")
 };
 
 void print_save_formats()
@@ -152,6 +185,8 @@ int main(int argc, char** argv)
     double& rz = rargs[2];
     
     
+    ImageSaveParams save_params;
+    
     if(argc <= 1)
     {
         print_usage();
@@ -224,6 +259,20 @@ int main(int argc, char** argv)
             continue;
         }
         
+        if(arg == "-q")
+        {
+            i++;
+            
+            if(i >= argc)
+            {
+                fprintf(stderr, "Expected integer after -q flag\n");
+                return EXIT_FAILURE;
+            }
+            
+            save_params.quality = atoi(argv[i]);
+            continue;
+        }
+        
         if(ri >= 3)
         {
             fprintf(stderr, "Only three rotation arguments are allowed\n");
@@ -251,7 +300,8 @@ int main(int argc, char** argv)
         return EXIT_FAILURE;
     }
     
-    if(!load(src, input_filename))
+    ImageLoadResult load_result = load(src, input_filename);
+    if(!load_result.ok)
     {
         fprintf(stderr, "[ERROR] Couldn't load input file -- stopping.\n");
         return EXIT_FAILURE;
@@ -273,7 +323,14 @@ int main(int argc, char** argv)
 
     
     remap_full3(dst, src, rotZ(rz)*rotY(ry)*rotX(rx));
-    save_format->save(dst, output_filename);
+    
+    if(save_format->flag_name == "TIFF")
+    {
+        save_params.bps = load_result.bps;
+        save_params.spp = load_result.spp;
+    }
+    
+    save_format->save(dst, output_filename, save_params);
     
     return 0;
 }

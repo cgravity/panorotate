@@ -108,17 +108,17 @@ RGBAF bilinear_get(const Image<RGBAF>& src, double x, double y)
 
 
 
-
-
 // FIXME: This assumes 8-bit RGB stored as scanlines in a single page.
 // TIFF allows for a hell of a lot of other possibilities, some of which
 // should definitely be handled (e.g. 16-bit, as well as RGBA).
-bool load_tiff(Image<RGBAF>& into, const std::string& path)
+ImageLoadResult load_tiff(Image<RGBAF>& into, const std::string& path)
 {
+    ImageLoadResult result;
+    
     TIFF* tif = TIFFOpen(path.c_str(), "r");
     
     if(!tif)
-        return false;
+        return result;
     
     uint32 width;
     uint32 height;
@@ -130,33 +130,43 @@ bool load_tiff(Image<RGBAF>& into, const std::string& path)
     uint32 spp = 0;
     TIFFGetField(tif, TIFFTAG_SAMPLESPERPIXEL, &spp);
     
+    result.bps = bps;
+    result.spp = spp;
+    
     double scale;
+    int bytes;
     
     if(bps == 8)
     {
         scale = 0xFF;
+        bytes = 1;
     }
     else if(bps == 16)
     {
         scale = 0xFFFF;
+        bytes = 2;
     }
     else
     {
         fprintf(stderr, "[ERROR] TIFF with unsupported bits per sample: %u\n",
             bps);
-            
-        return false;
+        
+        TIFFClose(tif);
+        return result;
     }
     
     if(spp != 3 && spp != 4)
     {
         fprintf(stderr, "[ERROR] TIFF with unsupported samples per pixel: %u\n",
             spp);
+        
+        TIFFClose(tif);
+        return result;
     }
     
     into.resize(width, height);
     
-    unsigned char* buffer = (unsigned char*)malloc(width*spp);
+    unsigned char* buffer = (unsigned char*)malloc(width*spp*bytes);
     
     for(uint32_t row = 0; row < height; row++)
     {
@@ -206,11 +216,15 @@ bool load_tiff(Image<RGBAF>& into, const std::string& path)
     
     free(buffer);
     TIFFClose(tif);
-    return true;
+    
+    result.ok = true;
+    return result;
 }
 
-bool load_jpeg(Image<RGBAF>& into, const std::string& path)
+ImageLoadResult load_jpeg(Image<RGBAF>& into, const std::string& path)
 {
+    ImageLoadResult result;     // ok = false by default
+    
     jpeg_decompress_struct cinfo;
     jpeg_error_mgr jerr;
     
@@ -225,7 +239,7 @@ bool load_jpeg(Image<RGBAF>& into, const std::string& path)
     {
         fprintf(stderr, "[ERROR] Failed to open: %s\n", path.c_str());
         jpeg_destroy_decompress(&cinfo);
-        return false;
+        return result;
     }
     
     jpeg_stdio_src(&cinfo, fp);
@@ -235,7 +249,7 @@ bool load_jpeg(Image<RGBAF>& into, const std::string& path)
         fprintf(stderr, "[ERROR] Failed to read JPG header: %s\n",path.c_str());
         jpeg_destroy_decompress(&cinfo);
         fclose(fp);
-        return false;
+        return result;
     }
     
     cinfo.out_color_space = JCS_RGB;
@@ -271,10 +285,13 @@ bool load_jpeg(Image<RGBAF>& into, const std::string& path)
     fclose(fp);
     
     free(data);
-    return true;
+    
+    result.ok = true;
+    return result;
 }
 
-void save_jpeg(const Image<RGBAF>& from, const std::string& path)
+void save_jpeg(const Image<RGBAF>& from, const std::string& path, 
+    ImageSaveParams params)
 {
     jpeg_compress_struct cinfo;
     jpeg_error_mgr error;
@@ -298,7 +315,7 @@ void save_jpeg(const Image<RGBAF>& from, const std::string& path)
     cinfo.in_color_space = JCS_RGB;
     
     jpeg_set_defaults(&cinfo);
-    jpeg_set_quality(&cinfo, 90, TRUE);
+    jpeg_set_quality(&cinfo, params.quality, TRUE);
     
     jpeg_start_compress(&cinfo, TRUE);
     
@@ -324,30 +341,100 @@ void save_jpeg(const Image<RGBAF>& from, const std::string& path)
     fclose(fp);
 }
 
-void save_tiff(const Image<RGBAF>& from, const std::string& path)
+void save_tiff(const Image<RGBAF>& from, const std::string& path, 
+    ImageSaveParams params)
 {
-    unsigned char* row = (unsigned char*)malloc(from.width * 3);
-    memset(row, '\0', from.width*3);
+    unsigned char* row_bytes = NULL;
+    uint16_t* row_shorts = NULL;
 
+    if(params.spp !=3 && params.spp != 4)
+    {
+        fprintf(stderr, "[ERROR] Unsupported output TIFF SPP: %d\n",
+            params.spp);
+        
+        return;
+    }
+
+    if(params.bps == 8)
+    {
+        row_bytes = (unsigned char*)malloc(from.width * params.spp);
+        memset(row_bytes, '\0', from.width * params.spp);
+    }
+    else if(params.bps == 16)
+    {
+        row_shorts = (uint16_t*)malloc(from.width * params.spp * 2);
+        memset(row_shorts, '\0', from.width * params.spp * 2);
+    }
+    else
+    {
+        fprintf(stderr, "[ERROR] Unsupported output TIFF BPS: %d\n", 
+            params.bps);
+        return;
+    }
+    
+    
     TIFF* tif = TIFFOpen(path.c_str(), "w");
+    
+    if(!tif)
+    {
+        perror("save_tiff");
+        return;
+    }
+    
     TIFFSetField(tif, TIFFTAG_IMAGEWIDTH, from.width);
     TIFFSetField(tif, TIFFTAG_IMAGELENGTH, from.height);
-    TIFFSetField(tif, TIFFTAG_SAMPLESPERPIXEL, 3);
-    TIFFSetField(tif, TIFFTAG_BITSPERSAMPLE, 8);
+    TIFFSetField(tif, TIFFTAG_SAMPLESPERPIXEL, params.spp);
+    TIFFSetField(tif, TIFFTAG_BITSPERSAMPLE, params.bps);
     TIFFSetField(tif, TIFFTAG_ORIENTATION, ORIENTATION_TOPLEFT);
-    TIFFSetField(tif, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
+    TIFFSetField(tif, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);    
     TIFFSetField(tif, TIFFTAG_PHOTOMETRIC, PHOTOMETRIC_RGB);
+    
+    if(params.spp == 4)
+    {
+        uint16 extra_list[1] = {EXTRASAMPLE_ASSOCALPHA};
+        TIFFSetField(tif, TIFFTAG_EXTRASAMPLES, 1, &extra_list);
+    }
+        
     
     for(size_t y = 0; y < from.height; y++)
     {
         for(size_t x = 0; x < from.width; x++)
         {
-            row[3*x+0] = 0xFF * from.get(x,y).r;
-            row[3*x+1] = 0xFF * from.get(x,y).g;
-            row[3*x+2] = 0xFF * from.get(x,y).b;
-        }
         
-        TIFFWriteScanline(tif, row, y, 0);
+            if(params.bps == 8)
+            {
+                row_bytes[params.spp*x+0] = 0xFF * from.get(x,y).r;
+                row_bytes[params.spp*x+1] = 0xFF * from.get(x,y).g;
+                row_bytes[params.spp*x+2] = 0xFF * from.get(x,y).b;
+                
+                if(params.spp == 4)
+                {
+                    row_bytes[params.spp*x+3] = 0xFF * from.get(x,y).a;
+                }
+                
+                
+                TIFFWriteScanline(tif, row_bytes, y, 0);
+            }
+            else if(params.bps == 16)
+            {
+                row_shorts[params.spp*x+0] = 0xFFFF * from.get(x,y).r;
+                row_shorts[params.spp*x+1] = 0xFFFF * from.get(x,y).g;
+                row_shorts[params.spp*x+2] = 0xFFFF * from.get(x,y).b;
+                
+                if(params.spp == 4)
+                {
+                    row_shorts[params.spp*x+3] = 0xFFFF * from.get(x,y).a;
+                }
+                        
+                TIFFWriteScanline(tif, row_shorts, y, 0);
+            }
+            else
+            {
+                fprintf(stderr, "[ERROR] save_tiff invalid state\n");
+                TIFFClose(tif);
+                return;
+            }
+        }
     }
     
     TIFFClose(tif);
@@ -368,8 +455,10 @@ void convert_image(Image<RGB8>& dst, const Image<RGBAF>& src)
     }
 }
 
-bool load(Image<RGBAF>& into, const std::string& path)
+ImageLoadResult load(Image<RGBAF>& into, const std::string& path)
 {
+    ImageLoadResult bad_result;     // ok = false by default
+    
     char buffer[16];
     memset(buffer, '\0', sizeof(buffer));
     
@@ -378,7 +467,7 @@ bool load(Image<RGBAF>& into, const std::string& path)
     if(!fp)
     {
         fprintf(stderr, "[ERROR] Failed to open file: %s\n", path.c_str());
-        return false;
+        return bad_result;
     }
     
     size_t read_size = fread(buffer, 1, 16, fp);
@@ -387,14 +476,14 @@ bool load(Image<RGBAF>& into, const std::string& path)
     if(read_size != 16)
     {
         fprintf(stderr, "[ERROR] Failed to read from file: %s\n", path.c_str());
-        return false;
+        return bad_result;
     }
     
     // PNG
     if(memcmp(buffer, "\x89\x50\x4E\x47\x0D\x0A\x1A\x0A", 8) == 0)
     {
         fprintf(stderr, "[ERROR] PNG input type is not supported yet\n");
-        return false;
+        return bad_result;
     }
     
     // JPG
@@ -412,6 +501,6 @@ bool load(Image<RGBAF>& into, const std::string& path)
     }
     
     fprintf(stderr, "[ERROR] Did not recognize input file format.\n");
-    return false;
+    return bad_result;
 }
 
