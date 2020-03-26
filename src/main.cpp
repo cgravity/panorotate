@@ -29,7 +29,7 @@ const char* USAGE =
 "    panorotate -i input.tif -o output.tif -f TIFF_RGBA16 90 0 0\n"
 "\n"
 "    This loads input.tif, rotates the X axis by 90 degrees, and saves the\n"
-"    output into output.tiff in 16-bit RGBA format.\n"
+"    output into output.tif in 16-bit RGBA format.\n"
 ;
 
 

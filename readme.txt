@@ -15,7 +15,7 @@ Example usage:
     panorotate -i input.tif -o output.tif -f TIFF_RGBA16 90 0 0
 
     This loads input.tif, rotates the X axis by 90 degrees, and saves the
-    output into output.tiff in 16-bit RGBA format.
+    output into output.tif in 16-bit RGBA format.
 
 Recognized save format flags (for -f):
     TIFF           (default) -- matches bps/spp from input
