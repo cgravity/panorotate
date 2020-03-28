@@ -8,7 +8,7 @@ using namespace std;
 #include "test.h"
 
 // rotate 90 degrees, rotate back, calculate and print stats
-void double_rotate_test(const Image<RGBAF>& src)
+void double_rotate_test(const Image<RGBAF>& src, bool preview_mode)
 {
     Image<RGBAF> dst, dst2;
     
@@ -17,11 +17,28 @@ void double_rotate_test(const Image<RGBAF>& src)
     
     printf("Rotating...\n");
     //remap_full1(dst, src, rotX(deg2rad(90)));
-    remap_full3(dst, src, rotX(deg2rad(90)), 0.001);
+    
+    if(preview_mode)
+    {
+        remap_fast(dst, src, rotX(deg2rad(90)));
+    }
+    else
+    {
+        remap_full3(dst, src, rotX(deg2rad(90)), 0.001);
+    }
     
     printf("Rotating back...\n");
     //remap_full1(dst2, dst, rotX(deg2rad(-90)));
-    remap_full3(dst2, dst, rotX(deg2rad(-90)),  0.001);
+    
+    if(preview_mode)
+    {
+        remap_fast(dst2, dst, rotX(deg2rad(-90)));
+    }
+    else
+    {
+        remap_full3(dst2, dst, rotX(deg2rad(-90)),  0.001);
+    }
+
     
     printf("Converting to 8-bit...\n");
     Image<RGB8> out_src, out_dst;

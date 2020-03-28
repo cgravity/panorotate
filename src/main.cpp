@@ -13,7 +13,8 @@ using namespace std;
 const char* USAGE =
 
 "Usage: panorotate -i <filename> [-o <filename>] [-f <format>]\n"
-"                  [-q <jpg_quality>] [--test] [<x>] [<y>] [<z>]\n"
+"                  [-q <jpg_quality>] [--test] [--preview]\n"
+"                  [<x>] [<y>] [<z>]\n"
 "\n"
 "Flags and arguments:\n"
 "    -i filename    specify input filename (required)\n"
@@ -23,6 +24,8 @@ const char* USAGE =
 "    -q jpg_quality Integer quality percent to use when saving as JPEG.\n"
 "                   (default is 90)\n"
 "    --test         Run the double rotation test and print statistics.\n"
+"    --preview      Perform a single sample per output pixel to create\n"
+"                   a preview image more quickly.\n"
 "    <x y z>        Rotation angles in degrees (unset values default to 0)\n"
 "\n"
 "Example usage:\n"
@@ -175,6 +178,7 @@ int main(int argc, char** argv)
     string input_filename;
     string output_filename;
     bool run_test = false;  // true if double rotate test is requested
+    bool preview_mode = false;  // true when user wants quick result
 
     double rargs[3];        // rotation arguments as array
     int ri = 0;             // current parse position for rotation args
@@ -206,6 +210,12 @@ int main(int argc, char** argv)
         if(arg == "--test")
         {
             run_test = true;
+            continue;
+        }
+        
+        if(arg == "--preview")
+        {
+            preview_mode = true;
             continue;
         }
         
@@ -309,7 +319,7 @@ int main(int argc, char** argv)
     
     if(run_test)
     {
-        double_rotate_test(src);
+        double_rotate_test(src, preview_mode);
         return 0;
     }
     
@@ -320,9 +330,18 @@ int main(int argc, char** argv)
     printf("Output type: %s\n", save_format->flag_name.c_str());
     printf("Size:        %lu %lu\n", src.width, src.height);
     printf("Rotation:    %f %f %f\n", rad2deg(rx), rad2deg(ry), rad2deg(rz));
-
     
-    remap_full3(dst, src, rotZ(rz)*rotY(ry)*rotX(rx));
+    if(preview_mode)
+    {
+        printf("Preview mode enabled -- quality may be reduced to produce"
+               " results faster\n");
+               
+        remap_fast(dst, src, rotZ(rz)*rotY(ry)*rotX(rx));
+    }
+    else
+    {
+        remap_full3(dst, src, rotZ(rz)*rotY(ry)*rotX(rx));
+    }
     
     if(save_format->flag_name == "TIFF")
     {

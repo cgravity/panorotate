@@ -71,6 +71,40 @@ void remap_full3(Image<RGBAF>& onto, const Image<RGBAF>& from, Mat3 rot,
     }
 }
 
+void remap_fast(Image<RGBAF>& onto, const Image<RGBAF>& from, Mat3 rot)
+{
+    LL2Vec3_Table lookup_table(onto.width, onto.height, 3);
+    
+    #pragma omp parallel for
+    for(size_t y = 0; y < onto.height; y++)
+    for(size_t x = 0; x < onto.width; x++)
+    {
+        RGBAF out_pixel;
+    
+        Vec3 v = lookup_table.lookup(x, 1, y, 1);
+        v = rot * v;
+        LatLong LL_src = vec3_to_latlong(v);
+        
+        double src_x = LL_src.long_ / (2*M_PI) * (from.width-1);
+        double src_y = 
+            (M_PI - (LL_src.lat+(M_PI/2)))/ M_PI * (from.height-1);
+        
+        if(src_x > from.width-1)
+            src_x = from.width - 1;
+        if(src_y > from.height-1)
+            src_y = from.height - 1;
+        if(src_x < 0)
+            src_x = 0;
+        if(src_y < 0)
+            src_y = 0;
+        
+        out_pixel = bilinear_get(from, src_x, src_y);
+    
+        onto.put(x,y,out_pixel);
+    }
+}
+
+
 
 // obsolete -- only included still for quality comparison
 void remap_full1(Image<RGBAF>& onto, const Image<RGBAF>& from, Mat3 rot)
