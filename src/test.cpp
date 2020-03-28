@@ -8,9 +8,11 @@ using namespace std;
 #include "test.h"
 
 // rotate 90 degrees, rotate back, calculate and print stats
-void double_rotate_test(const Image<RGBAF>& src, bool preview_mode)
+void double_rotate_test(const Image<RGBAF>& src, Mat3 rot,bool preview_mode)
 {
     Image<RGBAF> dst, dst2;
+    
+    Mat3 inv = transpose(rot);
     
     dst.resize(src.width, src.height);
     dst2.resize(src.width, src.height);
@@ -20,11 +22,11 @@ void double_rotate_test(const Image<RGBAF>& src, bool preview_mode)
     
     if(preview_mode)
     {
-        remap_fast(dst, src, rotX(deg2rad(90)));
+        remap_fast(dst, src, rot);
     }
     else
     {
-        remap_full3(dst, src, rotX(deg2rad(90)), 0.001);
+        remap_full3(dst, src, rot, 0.001);
     }
     
     printf("Rotating back...\n");
@@ -32,11 +34,11 @@ void double_rotate_test(const Image<RGBAF>& src, bool preview_mode)
     
     if(preview_mode)
     {
-        remap_fast(dst2, dst, rotX(deg2rad(-90)));
+        remap_fast(dst2, dst, inv);
     }
     else
     {
-        remap_full3(dst2, dst, rotX(deg2rad(-90)),  0.001);
+        remap_full3(dst2, dst, inv,  0.001);
     }
 
     

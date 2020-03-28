@@ -84,3 +84,6 @@ Mat3 rotZ(double r);
 
 Mat3 ident();
 
+Mat3 transpose(const Mat3&);
+
+

@@ -319,7 +319,18 @@ int main(int argc, char** argv)
     
     if(run_test)
     {
-        double_rotate_test(src, preview_mode);
+        Mat3 rot;
+        
+        if(ri == 0)
+        {
+            rot = rotX(deg2rad(90));
+        }
+        else
+        {
+            rot = rotZ(rz)*rotY(ry)*rotX(rx);
+        }
+        
+        double_rotate_test(src, rot, preview_mode);
         return 0;
     }
     

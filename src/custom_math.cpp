@@ -158,4 +158,26 @@ Mat3 ident()
     return m;
 }
 
+Mat3 transpose(const Mat3& input)
+{
+    // 0 1 2       0 3 6 
+    // 3 4 5  <->  1 4 7
+    // 6 7 8       2 5 8
+
+    Mat3 m;
+    
+    m[0] = input[0];
+    m[1] = input[3];
+    m[2] = input[6];
+    
+    m[3] = input[1];
+    m[4] = input[4];
+    m[5] = input[7];
+    
+    m[6] = input[2];
+    m[7] = input[5];
+    m[8] = input[8];
+    
+    return m;
+}
 
