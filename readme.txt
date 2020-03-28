@@ -1,5 +1,6 @@
 Usage: panorotate -i <filename> [-o <filename>] [-f <format>]
-                  [-q <jpg_quality>] [--test] [<x>] [<y>] [<z>]
+                  [-q <jpg_quality>] [--test] [--preview]
+                  [<x>] [<y>] [<z>]
 
 Flags and arguments:
     -i filename    specify input filename (required)
@@ -9,6 +10,8 @@ Flags and arguments:
     -q jpg_quality Integer quality percent to use when saving as JPEG.
                    (default is 90)
     --test         Run the double rotation test and print statistics.
+    --preview      Perform a single sample per output pixel to create
+                   a preview image more quickly.
     <x y z>        Rotation angles in degrees (unset values default to 0)
 
 Example usage:
