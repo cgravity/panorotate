@@ -188,6 +188,8 @@ int main(int argc, char** argv)
     double& ry = rargs[1];
     double& rz = rargs[2];
     
+    rx = ry = rz = 0.0;
+    
     
     ImageSaveParams save_params;
     
