@@ -1,6 +1,6 @@
 Usage: panorotate -i <filename> [-o <filename>] [-f <format>]
                   [-q <jpg_quality>] [--test] [--preview]
-                  [<x>] [<y>] [<z>]
+                  [--order <rpy>] [<angles...>]
 
 Flags and arguments:
     -i filename    specify input filename (required)
@@ -10,9 +10,21 @@ Flags and arguments:
     -q jpg_quality Integer quality percent to use when saving as JPEG.
                    (default is 90)
     --test         Run the double rotation test and print statistics.
+                   If no angles are specified by default a 90 degree
+                   roll is used to test the quality.
     --preview      Perform a single sample per output pixel to create
                    a preview image more quickly.
-    <x y z>        Rotation angles in degrees (unset values default to 0)
+    --order rpy    Rotation sequence to perform indicating order of
+                   roll (R), pitch (P), and yaw (Y). Only 'R', 'P', 'Y'
+                   may be used in the argument following --order, though
+                   any number or combination of them may be provided.
+                   e.g. R, RPY, RPR... if this argument is not
+                   specified then the default order is RPY.
+                   'RPY' means that first a roll will be performed, then
+                   a pitch, and finally a yaw.
+    [<angles...>]  Rotation angles in degrees.
+                   Unspecified angles will be assumed to be zero.
+                   Extra angles will be ignored.
 
 Example usage:
     panorotate -i input.tif -o output.tif -f TIFF_RGBA16 90 0 0
